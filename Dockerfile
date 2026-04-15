@@ -3,7 +3,7 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NODE_ENV=production
-
+ 
 # System packages + security scanners
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl gnupg ca-certificates unzip git openssh-client bash \
