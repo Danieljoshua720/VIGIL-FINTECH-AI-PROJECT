@@ -1,0 +1,107 @@
+services:
+  vigil:
+    build: .
+    container_name: vigil
+    ports:
+      - "4100:4100"
+    environment:
+      - VIGIL_PORT=4100
+      - VIGIL_USER=${VIGIL_USER:-admin}
+      - VIGIL_PASS=${VIGIL_PASS:-}
+      - DATABASE_URL=postgresql://vigil:vigil@postgres:5432/vigil
+      - NODE_ENV=production
+      - AI_PROVIDER=${AI_PROVIDER:-ollama}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:8b}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - BRIDGE_URL=http://kali-bridge:9877
+      - BRIDGE_SHARED_TOKEN=${BRIDGE_SHARED_TOKEN:-vigil-bridge-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      kali-bridge:
+        condition: service_healthy
+    volumes:
+      - vigil-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.claude:/home/vigil/.claude-host:ro
+      - gh-config:/home/vigil/.config/gh
+    group_add:
+      - "${DOCKER_GID:-0}"
+    restart: unless-stopped
+    networks:
+      - vigil-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  kali-bridge:
+    build: ./docker/bridge
+    container_name: vigil-kali
+    environment:
+      - PORT=9877
+      - BRIDGE_SHARED_TOKEN=${BRIDGE_SHARED_TOKEN:-vigil-bridge-token}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9877/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - vigil-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ollama:
+    image: ollama/ollama
+    container_name: vigil-ollama
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - vigil-net
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: vigil-db
+    environment:
+      - POSTGRES_USER=vigil
+      - POSTGRES_PASSWORD=vigil
+      - POSTGRES_DB=vigil
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vigil"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - vigil-net
+
+networks:
+  vigil-net:
+    driver: bridge
+
+volumes:
+  vigil-data:
+  pg-data:
+  gh-config:
+  ollama-models:
